@@ -1,0 +1,12 @@
+{
+  "name": "Next Walking",
+  "short_name": "Next Walking",
+  "start_url": "/NEXT-WALKINS/",
+  "display": "standalone",
+  "background_color": "#071426",
+  "theme_color": "#071426",
+  "description": "Real-time walk-in ranking for barbershops connected to Meevo.",
+  "icons": [
+    {"src":"/NEXT-WALKINS/icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}
+  ]
+}
