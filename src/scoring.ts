@@ -1,5 +1,5 @@
 export type Status='AVAILABLE'|'WITH CLIENT'|'BREAK'|'APPOINTMENT SOON'|'OFF SHIFT';
-export type Barber={id:number;externalId?:string;name:string;status:Status;appointments:number;occupancy:number;revenue:number;completed:number;clients?:number;walkins:number;walkinRevenue?:number;walkinAssignments?:number;idle:number;next:number;rejections:number;breakMinutes?:number;scheduledToday?:boolean;shiftStart?:string;shiftEnd?:string};
+export type Barber={id:number;externalId?:string;name:string;status:Status;appointments:number;occupancy:number;revenue:number;completed:number;clients?:number;walkins:number;walkinRevenue?:number;walkinAssignments?:number;idle:number;next:number;rejections:number;breakMinutes?:number;scheduledToday?:boolean;shiftStart?:string;shiftEnd?:string;localStatusUntil?:string;localStatusReason?:'WALKIN'|'BREAK';localRevenueDelta?:number};
 export type Strategy='BALANCED'|'FAIR'|'REVENUE';
 export type Weights={availability:number;appointments:number;occupancy:number;revenue:number;idle:number;walkins:number;runway:number;rejections:number;completed:number;breaks:number};
 export const PRESETS:Record<Strategy,Weights>={
@@ -10,8 +10,6 @@ export const PRESETS:Record<Strategy,Weights>={
 const clamp=(n:number,min=0,max=1)=>Math.max(min,Math.min(max,n));
 export function isWorkingToday(b:Barber){return b.scheduledToday!==false&&b.status!=='OFF SHIFT'}
 export function filterWorkingToday(barbers:Barber[]){return barbers.filter(isWorkingToday)}
-// A barber with an appointment in <=15 minutes is protected from a new walk-in.
-// 16-30 minutes remains eligible but heavily penalized through availability/runway.
 export function isEligible(b:Barber){return isWorkingToday(b)&&(b.status==='AVAILABLE'||(b.status==='APPOINTMENT SOON'&&b.next>15))}
 export function scoreBreakdown(b:Barber,w:Weights){
  if(!isEligible(b))return {availability:0,appointments:0,occupancy:0,revenue:0,idle:0,walkins:0,runway:0,rejections:0,completed:0,breaks:0};
