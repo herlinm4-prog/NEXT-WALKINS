@@ -1,8 +1,9 @@
 import type { Barber } from './scoring';
 
-const STATE_KEY='next-walking:barbers:v2';
-const HISTORY_KEY='next-walking:history:v2';
-const scope=(base:string,organizationId?:string,locationId?:string)=>`${base}:${organizationId||'demo'}:${locationId||'default'}`;
+const STATE_KEY='next-walking:barbers:v3';
+const HISTORY_KEY='next-walking:history:v3';
+const day=()=>new Date().toLocaleDateString('en-CA');
+const scope=(base:string,organizationId?:string,locationId?:string)=>`${base}:${organizationId||'demo'}:${locationId||'default'}:${day()}`;
 export type HistoryEvent={id:string;at:string;type:string;barberId:number;barberName:string;detail:string};
 export function loadBarbers(fallback:Barber[],organizationId?:string,locationId?:string):Barber[]{try{const raw=localStorage.getItem(scope(STATE_KEY,organizationId,locationId));return raw?JSON.parse(raw):fallback}catch{return fallback}}
 export function saveBarbers(barbers:Barber[],organizationId?:string,locationId?:string){localStorage.setItem(scope(STATE_KEY,organizationId,locationId),JSON.stringify(barbers))}
