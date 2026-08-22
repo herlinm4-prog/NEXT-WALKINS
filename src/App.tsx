@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
+import { PRESETS, explainBarber, scoreBarber, type Barber, type Strategy } from './scoring';
+import { applyEvent } from './simulator';
 
-type Status='AVAILABLE'|'WITH CLIENT'|'BREAK'|'APPOINTMENT SOON'|'OFF SHIFT';
-type Barber={id:number;name:string;status:Status;appointments:number;occupancy:number;revenue:number;completed:number;walkins:number;idle:number;next:number;rejections:number};
 const initial:Barber[]=[
 {id:1,name:'Mike',status:'AVAILABLE',appointments:3,occupancy:42,revenue:185,completed:3,walkins:1,idle:48,next:80,rejections:0},
 {id:2,name:'David',status:'AVAILABLE',appointments:4,occupancy:51,revenue:230,completed:4,walkins:0,idle:62,next:55,rejections:0},
@@ -9,17 +9,28 @@ const initial:Barber[]=[
 {id:4,name:'Carlos',status:'AVAILABLE',appointments:7,occupancy:79,revenue:420,completed:6,walkins:3,idle:18,next:25,rejections:0},
 {id:5,name:'Jordan',status:'BREAK',appointments:2,occupancy:35,revenue:145,completed:2,walkins:1,idle:30,next:95,rejections:0}
 ];
-function score(b:Barber){if(b.status==='OFF SHIFT'||b.status==='WITH CLIENT'||b.status==='BREAK')return 0;const availability=b.status==='AVAILABLE'?25:8;const appts=Math.max(0,20-b.appointments*2.5);const load=Math.max(0,20-b.occupancy*.2);const revenue=Math.max(0,15-b.revenue/40);const idle=Math.min(12,b.idle/6);const walk=Math.max(0,8-b.walkins*2);const runway=b.next>=45?8:Math.max(0,b.next/45*8);return Math.round(Math.max(0,Math.min(100,availability+appts+load+revenue+idle+walk+runway-b.rejections*5)))}
+
 export default function App(){
- const [barbers,setBarbers]=useState(initial);const [updated,setUpdated]=useState(new Date());
+ const [barbers,setBarbers]=useState(initial);
+ const [updated,setUpdated]=useState(new Date());
+ const [strategy,setStrategy]=useState<Strategy>('BALANCED');
+ const weights=PRESETS[strategy];
+
  useEffect(()=>{const t=setInterval(()=>{setBarbers(x=>x.map(b=>({...b,next:Math.max(0,b.next-1),idle:b.status==='AVAILABLE'?b.idle+1:b.idle})));setUpdated(new Date())},60000);return()=>clearInterval(t)},[]);
- const ranked=useMemo(()=>barbers.map(b=>({...b,score:score(b)})).sort((a,b)=>b.score-a.score),[barbers]);const top=ranked[0];
- function assign(id:number){setBarbers(x=>x.map(b=>b.id===id?{...b,status:'WITH CLIENT',walkins:b.walkins+1,idle:0}:b));setUpdated(new Date())}
- function checkout(id:number){const amount=Number(prompt('Total cobrado por el servicio ($):','45')||0);setBarbers(x=>x.map(b=>b.id===id?{...b,status:'AVAILABLE',revenue:b.revenue+amount,completed:b.completed+1,idle:0}:b));setUpdated(new Date())}
- function toggleBreak(id:number){setBarbers(x=>x.map(b=>b.id===id?{...b,status:b.status==='BREAK'?'AVAILABLE':'BREAK'}:b));setUpdated(new Date())}
- return <div className="app"><aside><div className="brand"><span>✂</span><div>NEXT<br/><b>WALKING</b></div></div><nav><b>◉ Ranking en vivo</b><span>▣ Historial</span><span>♙ Barberos</span><span>⚙ Configuración</span></nav><div className="live"><i/> SISTEMA EN VIVO<small>Actualizado {updated.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</small></div></aside><main><header><div><p>BARBERÍA · OPERACIÓN EN TIEMPO REAL</p><h1>¿Quién recibe el próximo <em>walk-in?</em></h1></div><div className="clock">{new Date().toLocaleDateString('es-US',{weekday:'long',month:'short',day:'numeric'})}</div></header>
- <section className="hero"><div><label>PRÓXIMO WALK-IN</label><h2>{top.name}</h2><p>Disponible ahora · próxima cita en {top.next} min</p><div className="why">Prioridad calculada por disponibilidad, carga, ingresos, tiempo libre y reparto de walk-ins.</div><button onClick={()=>assign(top.id)}>Asignar walk-in a {top.name} →</button></div><div className="score"><strong>{top.score}</strong><span>/100</span><small>FAIRNESS SCORE</small></div></section>
- <div className="title"><h3>Ranking permanente</h3><span>Se recalcula automáticamente con cada cambio</span></div><section className="ranking">{ranked.map((b,i)=><article className={i===0?'first':''} key={b.id}><div className="rank">#{i+1}</div><div className="avatar">{b.name[0]}</div><div className="person"><b>{b.name}</b><span className={'status '+b.status.replaceAll(' ','-').toLowerCase()}>{b.status}</span></div><Metric n={`${b.score}`} l="SCORE"/><Metric n={`${b.appointments}`} l="CITAS"/><Metric n={`${b.occupancy}%`} l="OCUPACIÓN"/><Metric n={`$${b.revenue}`} l="INGRESOS"/><Metric n={`${b.walkins}`} l="WALK-INS"/><Metric n={`${b.idle}m`} l="LIBRE"/><Metric n={`${b.next}m`} l="PRÓX. CITA"/><div className="actions">{b.status==='WITH CLIENT'?<button onClick={()=>checkout(b.id)}>Cobrar</button>:b.status==='AVAILABLE'?<button onClick={()=>assign(b.id)}>Asignar</button>:null}<button className="ghost" onClick={()=>toggleBreak(b.id)}>{b.status==='BREAK'?'Fin break':'Break'}</button></div></article>)}</section>
- <section className="footerCards"><div><b>⚡ EVENT-DRIVEN</b><p>Asignaciones, cobros, citas y estados cambian el ranking inmediatamente.</p></div><div><b>🔌 MEEVO READY</b><p>Preparado para conectar Meevo API + DDS como fuente de datos en vivo.</p></div><div><b>⚖ FAIRNESS ENGINE</b><p>La prioridad combina oportunidad, producción y disponibilidad real.</p></div></section>
+ const ranked=useMemo(()=>barbers.map(b=>({...b,score:scoreBarber(b,weights)})).sort((a,b)=>b.score-a.score),[barbers,weights]);
+ const top=ranked[0];
+ const reasons=explainBarber(top);
+ const dispatch=(event:Parameters<typeof applyEvent>[1])=>{setBarbers(x=>applyEvent(x,event));setUpdated(new Date())};
+ const assign=(id:number)=>dispatch({type:'ASSIGN_WALKIN',barberId:id});
+ const checkout=(id:number)=>{const amount=Number(prompt('Total cobrado por el servicio ($):','45')||0);dispatch({type:'CHECKOUT',barberId:id,amount})};
+ const toggleBreak=(id:number)=>dispatch({type:'BREAK_TOGGLE',barberId:id});
+ const addAppointment=(id:number)=>{const minutes=Number(prompt('Minutos hasta la nueva cita:','60')||60);dispatch({type:'APPOINTMENT_ADDED',barberId:id,minutesUntil:minutes})};
+ const cancelAppointment=(id:number)=>dispatch({type:'APPOINTMENT_CANCELLED',barberId:id});
+
+ return <div className="app"><aside><div className="brand"><span>✂</span><div>NEXT<br/><b>WALKING</b></div></div><nav><b>◉ Ranking en vivo</b><span>▣ Historial</span><span>♙ Barberos</span><span>⚙ Configuración</span></nav><div className="strategy"><small>ESTRATEGIA</small><select value={strategy} onChange={e=>setStrategy(e.target.value as Strategy)}><option value="BALANCED">Balanced</option><option value="FAIR">Fair Distribution</option><option value="REVENUE">Maximum Revenue</option></select></div><div className="live"><i/> SISTEMA EN VIVO<small>Actualizado {updated.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'})}</small></div></aside><main><header><div><p>BARBERÍA · OPERACIÓN EN TIEMPO REAL</p><h1>¿Quién recibe el próximo <em>walk-in?</em></h1></div><div className="clock">{new Date().toLocaleDateString('es-US',{weekday:'long',month:'short',day:'numeric'})}</div></header>
+ <section className="hero"><div><label>PRÓXIMO WALK-IN</label><h2>{top.name}</h2><p>{top.status==='AVAILABLE'?'Disponible ahora':'Estado: '+top.status} · próxima cita en {top.next} min</p><div className="why">{reasons.length?reasons.join(' · '):'Prioridad calculada con el estado operativo actual.'}</div><button onClick={()=>assign(top.id)}>Asignar walk-in a {top.name} →</button></div><div className="score"><strong>{top.score}</strong><span>/100</span><small>FAIRNESS SCORE</small></div></section>
+ <div className="title"><h3>Ranking permanente</h3><span>Se recalcula inmediatamente con cada evento</span></div><section className="ranking">{ranked.map((b,i)=><article className={i===0?'first':''} key={b.id}><div className="rank">#{i+1}</div><div className="avatar">{b.name[0]}</div><div className="person"><b>{b.name}</b><span className={'status '+b.status.replaceAll(' ','-').toLowerCase()}>{b.status}</span></div><Metric n={`${b.score}`} l="SCORE"/><Metric n={`${b.appointments}`} l="CITAS"/><Metric n={`${b.occupancy}%`} l="OCUPACIÓN"/><Metric n={`$${b.revenue}`} l="INGRESOS"/><Metric n={`${b.walkins}`} l="WALK-INS"/><Metric n={`${b.idle}m`} l="LIBRE"/><Metric n={`${b.next}m`} l="PRÓX. CITA"/><div className="actions">{b.status==='WITH CLIENT'?<button onClick={()=>checkout(b.id)}>Cobrar</button>:b.status==='AVAILABLE'?<button onClick={()=>assign(b.id)}>Asignar</button>:null}<button className="ghost" onClick={()=>toggleBreak(b.id)}>{b.status==='BREAK'?'Fin break':'Break'}</button></div></article>)}</section>
+ <section className="simulator"><div><b>SIMULADOR EN TIEMPO REAL</b><p>Prueba eventos antes de conectar Meevo.</p></div><div className="simcontrols"><select id="simBarber">{barbers.map(b=><option key={b.id} value={b.id}>{b.name}</option>)}</select><button onClick={()=>{const id=Number((document.getElementById('simBarber') as HTMLSelectElement).value);addAppointment(id)}}>+ Cita</button><button onClick={()=>{const id=Number((document.getElementById('simBarber') as HTMLSelectElement).value);cancelAppointment(id)}}>Cancelar cita</button><button onClick={()=>{const id=Number((document.getElementById('simBarber') as HTMLSelectElement).value);toggleBreak(id)}}>Break</button></div></section>
+ <section className="footerCards"><div><b>⚡ EVENT-DRIVEN</b><p>Asignaciones, cobros, citas y estados cambian el ranking inmediatamente.</p></div><div><b>🔌 MEEVO READY</b><p>Preparado para conectar Meevo API + DDS como fuente de datos en vivo.</p></div><div><b>⚖ FAIRNESS ENGINE</b><p>Preset activo: {strategy}. El algoritmo permanece independiente de Meevo.</p></div></section>
  </main></div>}
 function Metric({n,l}:{n:string,l:string}){return <div className="metric"><b>{n}</b><small>{l}</small></div>}
