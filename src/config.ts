@@ -1,0 +1,2 @@
+export type AppConfig={barbershopName:string;serviceDurationMinutes:number;meevo:{enabled:boolean;tenantId:string;apiBaseUrl:string;syncMode:'demo'|'api-dds'}};
+export const config:AppConfig={barbershopName:'Next Walking Demo',serviceDurationMinutes:45,meevo:{enabled:false,tenantId:'',apiBaseUrl:'',syncMode:'demo'}};
