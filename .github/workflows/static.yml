@@ -12,7 +12,7 @@ permissions:
 
 concurrency:
   group: "pages"
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   deploy:
@@ -23,20 +23,36 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
+          cache: npm
+
       - name: Install dependencies
         run: npm install
-      - name: Build Next Walking
+
+      - name: Build premium Next Walking app
         run: npm run build
+
+      - name: Verify compiled CSS exists
+        run: |
+          test -f dist/index.html
+          grep -q "stylesheet" dist/index.html
+          find dist/assets -type f -name '*.css' | grep -q .
+
+      - name: Disable Jekyll processing
+        run: touch dist/.nojekyll
+
       - name: Setup Pages
         uses: actions/configure-pages@v5
-      - name: Upload built site
+
+      - name: Upload compiled site
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./dist
+
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
