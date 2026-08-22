@@ -28,7 +28,7 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm install
-      - name: Build
+      - name: Build Next Walking
         run: npm run build
       - name: Configure Pages
         uses: actions/configure-pages@v5
@@ -48,6 +48,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     steps:
-      - name: Deploy to GitHub Pages
+      - name: Deploy Next Walking to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
