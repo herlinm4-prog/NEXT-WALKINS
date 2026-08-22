@@ -1,0 +1,4 @@
+import type { Barber } from './scoring';
+import type { MeevoRealtimeEvent } from './meevo';
+
+export function applyMeevoEvent(barbers:Barber[],event:MeevoRealtimeEvent):Barber[]{const id=Number(event.employeeId);return barbers.map(b=>{if(b.id!==id)return b;switch(event.type){case'APPOINTMENT_ADDED':return{...b,appointments:b.appointments+1,occupancy:Math.min(100,b.occupancy+10)};case'APPOINTMENT_CANCELLED':return{...b,appointments:Math.max(0,b.appointments-1),occupancy:Math.max(0,b.occupancy-10)};case'SERVICE_STARTED':return{...b,status:'WITH CLIENT',idle:0};case'SERVICE_CHECKED_OUT':return{...b,status:'AVAILABLE',revenue:b.revenue+Number(event.payload.amount||0),completed:b.completed+1,idle:0};case'BREAK_STARTED':return{...b,status:'BREAK'};case'BREAK_ENDED':return{...b,status:'AVAILABLE',idle:0};default:return b}})}
