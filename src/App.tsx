@@ -5,7 +5,7 @@ import { appendHistory, loadBarbers, loadHistory, saveBarbers, type HistoryEvent
 import { publish, subscribe } from './realtime';
 import MeevoConnectionCard from './MeevoConnectionCard';
 import { loadConnection, type MeevoConnection } from './connection';
-import { fetchMeevoBarbers } from './meevo-sync';
+import { fetchMeevoBarbers, mergeMeevoWithLocal } from './meevo-sync';
 
 const initial:Barber[]=[
 {id:1,name:'Mike',status:'AVAILABLE',appointments:3,occupancy:42,revenue:185,completed:3,walkins:1,idle:48,next:80,rejections:0,breakMinutes:15,scheduledToday:true,shiftStart:'09:00',shiftEnd:'18:00'},
@@ -30,7 +30,7 @@ export default function App(){
  useEffect(()=>{saveBarbers(barbers)},[barbers]);
  useEffect(()=>subscribe(()=>{setBarbers(loadBarbers(initial));setHistory(loadHistory());setUpdated(new Date())}),[]);
  useEffect(()=>{if(isConnected)return;const t=setInterval(()=>{setBarbers(x=>x.map(b=>({...b,next:Math.max(0,b.next-1),idle:b.status==='AVAILABLE'?b.idle+1:b.idle})));setUpdated(new Date())},60000);return()=>clearInterval(t)},[isConnected]);
- useEffect(()=>{if(!isConnected)return;let stopped=false;const sync=async()=>{try{const live=await fetchMeevoBarbers(connection);if(!stopped&&live.length){setBarbers(live);setSyncError('');setUpdated(new Date())}}catch(e){if(!stopped)setSyncError(e instanceof Error?e.message:'Meevo sync failed')}};sync();const timer=setInterval(sync,60000);return()=>{stopped=true;clearInterval(timer)}},[isConnected,connection.tenantId,connection.locationId]);
+ useEffect(()=>{if(!isConnected)return;let stopped=false;const sync=async()=>{try{const live=await fetchMeevoBarbers(connection);if(!stopped&&live.length){setBarbers(current=>mergeMeevoWithLocal(live,current));setSyncError('');setUpdated(new Date())}}catch(e){if(!stopped)setSyncError(e instanceof Error?e.message:'Meevo sync failed')}};sync();const timer=setInterval(sync,60000);return()=>{stopped=true;clearInterval(timer)}},[isConnected,connection.tenantId,connection.locationId]);
  const ranked=useMemo(()=>barbers.map(b=>({...b,score:scoreBarber(b,weights)})).sort((a,b)=>b.score-a.score),[barbers,weights]);
  const top=ranked.find(b=>b.score>0); const reasons=top?explainBarber(top):[];
  const dispatch=(event:Parameters<typeof applyEvent>[1],detail:string)=>{const barber=barbers.find(b=>b.id===event.barberId);setBarbers(x=>{const next=applyEvent(x,event);saveBarbers(next);return next});if(barber)setHistory(appendHistory({type:event.type,barberId:barber.id,barberName:barber.name,detail}));setUpdated(new Date());publish('STATE_CHANGED')};
