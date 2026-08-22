@@ -28,16 +28,30 @@ export function mapMeevoEmployees(payload:any):Barber[]{return list(payload).map
  shiftStart:formatTime(e.shiftStart??e.ShiftStart),shiftEnd:formatTime(e.shiftEnd??e.ShiftEnd)
 }));}
 
+function activeOverride(b:Barber){if(!b.localStatusUntil)return false;const until=new Date(b.localStatusUntil).getTime();return Number.isFinite(until)&&until>Date.now()}
+
 export function mergeMeevoWithLocal(live:Barber[],local:Barber[]):Barber[]{
  const byExternal=new Map(local.filter(b=>b.externalId).map(b=>[String(b.externalId),b]));
- return live.map(b=>{const prev=b.externalId?byExternal.get(String(b.externalId)):undefined;if(!prev)return b;return{
-  ...b,
-  walkins:prev.walkins||0,
-  walkinAssignments:prev.walkinAssignments||0,
-  walkinRevenue:prev.walkinRevenue||0,
-  rejections:prev.rejections||0,
-  breakMinutes:Math.max(b.breakMinutes||0,prev.breakMinutes||0)
- };});
+ return live.map(b=>{
+  const prev=b.externalId?byExternal.get(String(b.externalId)):undefined;
+  if(!prev)return b;
+  const preserveStatus=activeOverride(prev);
+  const revenueDelta=prev.localRevenueDelta||0;
+  return{
+   ...b,
+   status:preserveStatus?prev.status:b.status,
+   idle:preserveStatus&&prev.status==='WITH CLIENT'?0:b.idle,
+   walkins:prev.walkins||0,
+   walkinAssignments:prev.walkinAssignments||0,
+   walkinRevenue:prev.walkinRevenue||0,
+   localRevenueDelta:revenueDelta,
+   revenue:b.revenue+revenueDelta,
+   rejections:prev.rejections||0,
+   breakMinutes:Math.max(b.breakMinutes||0,prev.breakMinutes||0),
+   localStatusReason:preserveStatus?prev.localStatusReason:undefined,
+   localStatusUntil:preserveStatus?prev.localStatusUntil:undefined
+  };
+ });
 }
 
 async function post(path:string,connection:MeevoConnection,extra:Record<string,unknown>={}){if(!connection.tenantId||!connection.locationId)return null;const response=await fetch(api(path),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tenantId:connection.tenantId,locationId:connection.locationId,...extra})});const payload=await response.json().catch(()=>({}));if(!response.ok)throw new Error(payload.error||'Meevo synchronization failed.');return payload;}
