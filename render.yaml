@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: next-walking-api
+    runtime: node
+    plan: starter
+    buildCommand: npm install
+    startCommand: npm run server
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: APP_ORIGIN
+        value: https://herlinm4-prog.github.io
+      - key: MEEVO_API_BASE_URL
+        sync: false
+      - key: MEEVO_TOKEN_URL
+        sync: false
+      - key: MEEVO_APP_ID
+        sync: false
+      - key: MEEVO_APP_SECRET
+        sync: false
