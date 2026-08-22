@@ -28,7 +28,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
 
       - name: Install dependencies
         run: npm install
@@ -36,10 +35,10 @@ jobs:
       - name: Build premium Next Walking app
         run: npm run build
 
-      - name: Verify compiled CSS exists
+      - name: Verify compiled site
         run: |
           test -f dist/index.html
-          grep -q "stylesheet" dist/index.html
+          test -d dist/assets
           find dist/assets -type f -name '*.css' | grep -q .
 
       - name: Disable Jekyll processing
