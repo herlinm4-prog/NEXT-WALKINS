@@ -9,11 +9,18 @@ const readBody=async req=>{let data='';for await(const chunk of req)data+=chunk;
 const positiveInt=value=>{const n=Number(value);return Number.isInteger(n)&&n>0?n:null};
 const rows=value=>Array.isArray(value)?value:Array.isArray(value?.data)?value.data:Array.isArray(value?.items)?value.items:Array.isArray(value?.Data)?value.Data:Array.isArray(value?.Items)?value.Items:Array.isArray(value?.Results)?value.Results:[];
 const value=(o,...keys)=>{for(const k of keys)if(o?.[k]!==undefined&&o?.[k]!==null)return o[k];return undefined};
+const numberValue=(o,...keys)=>{const n=Number(value(o,...keys));return Number.isFinite(n)?n:0};
 const employeeId=e=>String(value(e,'EmployeeId','employeeId','Id','id')||'');
 const employeeName=e=>String(value(e,'DisplayName','displayName','Nickname','nickname')||[value(e,'FirstName','firstName'),value(e,'LastName','lastName')].filter(Boolean).join(' ')||'Meevo Employee');
-const appointmentEmployeeId=a=>String(value(a,'EmployeeId','employeeId','ServiceProviderEmployeeId','serviceProviderEmployeeId','BookedEmployeeId','bookedEmployeeId')||'');
+const appointmentEmployeeId=a=>String(value(a,'EmployeeId','employeeId','ServiceProviderEmployeeId','serviceProviderEmployeeId','BookedEmployeeId','bookedEmployeeId','ProviderId','providerId')||'');
+const saleEmployeeId=s=>String(value(s,'EmployeeId','employeeId','ServiceProviderEmployeeId','serviceProviderEmployeeId','ProviderId','providerId')||'');
 const dateValue=(o,...keys)=>{const raw=value(o,...keys);if(!raw)return null;const d=new Date(raw);return Number.isNaN(d.getTime())?null:d};
 const minutes=(a,b)=>Math.round((b.getTime()-a.getTime())/60000);
+const clamp=(n,min,max)=>Math.max(min,Math.min(max,n));
+const text=(o,...keys)=>String(value(o,...keys)||'').toLowerCase();
+const isBreakLike=a=>/break|lunch|meal|off|blocked|personal/.test(text(a,'ServiceName','serviceName','AppointmentTypeName','appointmentTypeName','Description','description','Title','title','StatusName','statusName'));
+const isCancelled=a=>/cancel|deleted|no show/.test(text(a,'Status','status','StatusName','statusName','AppointmentStatus','appointmentStatus'));
+const saleAmount=s=>numberValue(s,'NetTotal','netTotal','Total','total','Amount','amount','GrandTotal','grandTotal','ServiceTotal','serviceTotal');
 
 async function bootstrap(tenantId,locationId){
  const verified=await verifyMeevoLocation(tenantId,locationId);
@@ -29,24 +36,49 @@ async function readDeltas(tenantId,locationId,since){
  return{since:start,receivedAt:new Date().toISOString(),...result};
 }
 
-function buildOperationalEmployees(employeesPayload,appointmentsPayload){
- const now=new Date();const employees=rows(employeesPayload);const appointments=rows(appointmentsPayload);
+function buildOperationalEmployees(employeesPayload,appointmentsPayload,salesPayload){
+ const now=new Date();
+ const dayStart=new Date(now);dayStart.setHours(0,0,0,0);
+ const dayEnd=new Date(now);dayEnd.setHours(23,59,59,999);
+ const employees=rows(employeesPayload),appointments=rows(appointmentsPayload),sales=rows(salesPayload);
  return employees.map((e,index)=>{
-  const eid=employeeId(e);const mine=appointments.filter(a=>appointmentEmployeeId(a)===eid);
-  const timed=mine.map(a=>({raw:a,start:dateValue(a,'StartTime','startTime','StartDateTime','startDateTime','ServiceStartTime','serviceStartTime'),end:dateValue(a,'EndTime','endTime','EndDateTime','endDateTime','ServiceEndTime','serviceEndTime')})).filter(x=>x.start);
-  const current=timed.find(x=>x.start&&x.start<=now&&(!x.end||x.end>now));
-  const future=timed.filter(x=>x.start&&x.start>now).sort((a,b)=>a.start.getTime()-b.start.getTime());
+  const eid=employeeId(e);
+  const mine=appointments.filter(a=>appointmentEmployeeId(a)===eid&&!isCancelled(a));
+  const timed=mine.map(a=>({raw:a,start:dateValue(a,'StartTime','startTime','StartDateTime','startDateTime','ServiceStartTime','serviceStartTime','BeginDateTime','beginDateTime'),end:dateValue(a,'EndTime','endTime','EndDateTime','endDateTime','ServiceEndTime','serviceEndTime','FinishDateTime','finishDateTime')})).filter(x=>x.start&&x.start>=dayStart&&x.start<=dayEnd);
+  const serviceTimed=timed.filter(x=>!isBreakLike(x.raw));
+  const breakTimed=timed.filter(x=>isBreakLike(x.raw));
+  const currentService=serviceTimed.find(x=>x.start<=now&&(!x.end||x.end>now));
+  const currentBreak=breakTimed.find(x=>x.start<=now&&(!x.end||x.end>now));
+  const future=serviceTimed.filter(x=>x.start>now).sort((a,b)=>a.start-b.start);
   const next=future[0];const nextMinutes=next?.start?Math.max(0,minutes(now,next.start)):999;
+  const completed=serviceTimed.filter(x=>x.end&&x.end<=now).length;
+  const lastCompleted=serviceTimed.filter(x=>x.end&&x.end<=now).sort((a,b)=>b.end-a.end)[0];
+  const idle=lastCompleted?.end&&!currentService&&!currentBreak?Math.max(0,minutes(lastCompleted.end,now)):0;
+  const bookedMinutes=serviceTimed.reduce((sum,x)=>sum+(x.start&&x.end?Math.max(0,minutes(x.start,x.end)):0),0);
+  const breakMinutes=breakTimed.reduce((sum,x)=>sum+(x.start&&x.end?Math.max(0,minutes(x.start,x.end)):0),0);
+  const shiftStart=dateValue(e,'ShiftStart','shiftStart','ScheduleStart','scheduleStart','StartTime','startTime');
+  const shiftEnd=dateValue(e,'ShiftEnd','shiftEnd','ScheduleEnd','scheduleEnd','EndTime','endTime');
+  const scheduledMinutes=shiftStart&&shiftEnd?Math.max(60,minutes(shiftStart,shiftEnd)):Math.max(480,bookedMinutes+breakMinutes);
+  const occupancy=Math.round(clamp(bookedMinutes/Math.max(1,scheduledMinutes)*100,0,100));
+  const mySales=sales.filter(s=>saleEmployeeId(s)===eid);
+  const revenue=Math.round(mySales.reduce((sum,s)=>sum+saleAmount(s),0)*100)/100;
   const isTerminated=Boolean(value(e,'IsTerminated','isTerminated'));
-  const status=isTerminated?'OFF SHIFT':current?'WITH CLIENT':nextMinutes<=30?'APPOINTMENT SOON':'AVAILABLE';
-  return{id:index+1,externalId:eid,name:employeeName(e),status,appointments:mine.length,next:nextMinutes===999?0:nextMinutes,scheduledToday:!isTerminated,source:'meevo'};
+  const isOff=/off/.test(text(currentBreak?.raw,'ServiceName','serviceName','Description','description','Title','title'));
+  const status=isTerminated||isOff?'OFF SHIFT':currentBreak?'BREAK':currentService?'WITH CLIENT':nextMinutes<=30?'APPOINTMENT SOON':'AVAILABLE';
+  return{
+   id:index+1,externalId:eid,name:employeeName(e),status,
+   appointments:serviceTimed.length,occupancy,revenue,completed,idle,
+   next:nextMinutes===999?0:nextMinutes,breakMinutes,scheduledToday:!isTerminated,
+   shiftStart:shiftStart?shiftStart.toISOString():undefined,shiftEnd:shiftEnd?shiftEnd.toISOString():undefined,
+   source:'meevo'
+  };
  });
 }
 
 async function operationalSnapshot(tenantId,locationId,since){
  const employees=await meevoGet('/v1/employees',{tenantId,locationId,params:{PageNumber:0,ItemsPerPage:100,IsTerminated:false}});
  const deltas=await readDeltas(tenantId,locationId,since||new Date(Date.now()-24*60*60*1000).toISOString());
- const operational=buildOperationalEmployees(employees,deltas.appointments);
+ const operational=buildOperationalEmployees(employees,deltas.appointments,deltas.sales);
  return{employees:operational,deltas,syncedAt:new Date().toISOString()};
 }
 
