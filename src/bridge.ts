@@ -1,56 +1,18 @@
 import type { Barber } from './scoring';
-
-export type VisualToken={text:string;x:number;y:number;w:number;h:number};
+export type VisualToken={text:string;x:number;y:number;w:number;h:number;cls?:string;tag?:string};
 export type MeevoBridgeSnapshot={at:string;url:string;title:string;visibleText:string;visualTokens?:VisualToken[]};
-
 const clean=(s:string)=>s.replace(/\s+/g,' ').trim();
-const blocked=new Set(['MEEVO','HOME','APPOINTMENT BOOK','REGISTER','TODAY','GO','LUNCH','OFF','CHAIR','DEFAULT','APPOINTMENTS','CLIENTS','SERVICES']);
+const blocked=new Set(['MEEVO','HOME','APPOINTMENT BOOK','REGISTER','TODAY','GO','LUNCH','OFF','CHAIR','DEFAULT','APPOINTMENTS','CLIENTS','SERVICES','SERVICE','REVENUE','TOTAL','AVAILABLE']);
 const isName=(s:string)=>/^[A-Za-zÁÉÍÓÚáéíóúÑñ' -]{2,30}$/.test(s)&&!blocked.has(s.toUpperCase());
-const isPercent=(s:string)=>/^\d{1,3}%$/.test(s)&&Number(s.replace('%',''))<=100;
-
-function visualPairs(tokens:VisualToken[]){
- const names=tokens.filter(t=>isName(clean(t.text)));
- const percents=tokens.filter(t=>isPercent(clean(t.text)));
- const pairs=new Map<string,number>();
- for(const p of percents){
-  const pcx=p.x+p.w/2;
-  const nearby=names
-   .map(n=>({n,dx:Math.abs((n.x+n.w/2)-pcx),dy:Math.abs(n.y-p.y)}))
-   .filter(v=>v.dx<=Math.max(80,p.w*2)&&v.dy<=140)
-   .sort((a,b)=>(a.dx*3+a.dy)-(b.dx*3+b.dy));
-  const best=nearby[0]?.n;
-  if(best){const name=clean(best.text).toUpperCase();pairs.set(name,Number(clean(p.text).replace('%','')))}
- }
- return pairs;
-}
-
+const num=(s:string)=>Number((s.match(/-?[\d,.]+/)?.[0]||'0').replace(/,/g,''));
+const statusOf=(s:string):Barber['status']=>{const u=s.toUpperCase();if(/OFF SHIFT|OFF|NOT WORKING/.test(u))return'OFF SHIFT';if(/BREAK|LUNCH/.test(u))return'BREAK';if(/WITH CLIENT|IN SERVICE|CHECKED IN|IN PROGRESS/.test(u))return'WITH CLIENT';if(/APPOINTMENT SOON|UPCOMING/.test(u))return'APPOINTMENT SOON';return'AVAILABLE'};
+function nearest(tokens:VisualToken[],anchor:VisualToken,rx:number,ry:number){return tokens.filter(t=>t!==anchor&&Math.abs((t.x+t.w/2)-(anchor.x+anchor.w/2))<=rx&&Math.abs(t.y-anchor.y)<=ry).sort((a,b)=>Math.abs(a.y-anchor.y)-Math.abs(b.y-anchor.y));}
 export function parseBridgeBarbers(snapshot:MeevoBridgeSnapshot):Barber[]{
- const candidates=snapshot.visualTokens?.length?visualPairs(snapshot.visualTokens):new Map<string,number>();
- const text=snapshot.visibleText||'';
- if(!candidates.size){
-  const direct=/\b([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ' -]{2,28})\s+(\d{1,3})%\b/g;
-  let m:RegExpExecArray|null;
-  while((m=direct.exec(text))){const name=clean(m[1]);const occupancy=Number(m[2]);if(isName(name)&&occupancy<=100)candidates.set(name.toUpperCase(),occupancy)}
- }
- if(!candidates.size){
-  const lines=text.split(/\r?\n/).map(clean).filter(Boolean);
-  for(let i=0;i<lines.length-1;i++){
-   if(isPercent(lines[i+1])&&isName(lines[i]))candidates.set(lines[i].toUpperCase(),Number(lines[i+1].replace('%','')));
-  }
- }
- return [...candidates.entries()].map(([raw,occupancy],index)=>{
-  const name=raw.toLowerCase().replace(/(^|\s)\S/g,s=>s.toUpperCase());
-  return {id:10000+index,externalId:`bridge:${raw}`,name,status:'AVAILABLE',appointments:0,occupancy,revenue:0,completed:0,walkins:0,idle:0,next:90,rejections:0,breakMinutes:0,scheduledToday:true};
- });
+ const ts=snapshot.visualTokens||[], names=ts.filter(t=>isName(clean(t.text)));
+ const perc=ts.filter(t=>/^\d{1,3}%$/.test(clean(t.text))&&num(t.text)<=100);
+ const anchors=new Map<string,VisualToken>();
+ for(const p of perc){const pc=p.x+p.w/2;const n=names.map(n=>({n,d:Math.abs((n.x+n.w/2)-pc)*3+Math.abs(n.y-p.y)})).filter(v=>Math.abs((v.n.x+v.n.w/2)-pc)<100&&Math.abs(v.n.y-p.y)<180).sort((a,b)=>a.d-b.d)[0]?.n;if(n)anchors.set(clean(n.text).toUpperCase(),n)}
+ if(!anchors.size)for(const n of names)if(ts.some(t=>Math.abs(t.x-n.x)<100&&/^\d{1,3}%$/.test(clean(t.text))))anchors.set(clean(n.text).toUpperCase(),n);
+ return [...anchors.entries()].map(([raw,a],i)=>{const local=nearest(ts,a,150,900), joined=local.map(t=>clean(t.text)).join(' | ');const occupancy=local.map(t=>clean(t.text)).filter(x=>/^\d{1,3}%$/.test(x)).map(num).find(x=>x<=100)??0;const money=[...joined.matchAll(/\$\s?([\d,]+(?:\.\d{1,2})?)/g)].map(m=>num(m[1]));const revenue=money.length?Math.max(...money):0;const serviceMatch=joined.match(/(?:services?|completed)\s*[:#]?\s*(\d+)/i)||joined.match(/(\d+)\s*(?:services?|completed)/i);const apptMatch=joined.match(/(?:appointments?|appts?)\s*[:#]?\s*(\d+)/i)||joined.match(/(\d+)\s*(?:appointments?|appts?)/i);const nextMatch=joined.match(/(?:next|appointment)\D{0,12}(\d{1,3})\s*min/i);const name=raw.toLowerCase().replace(/(^|\s)\S/g,s=>s.toUpperCase());return{id:10000+i,externalId:`bridge:${raw}`,name,status:statusOf(joined),appointments:apptMatch?num(apptMatch[1]):0,occupancy,revenue,completed:serviceMatch?num(serviceMatch[1]):0,walkins:0,idle:0,next:nextMatch?num(nextMatch[1]):90,rejections:0,breakMinutes:/break|lunch/i.test(joined)?1:0,scheduledToday:!(/off shift|not working/i.test(joined))};});
 }
-
-export function listenForMeevoBridge(onSnapshot:(snapshot:MeevoBridgeSnapshot,barbers:Barber[])=>void){
- const handler=(event:MessageEvent)=>{
-  if(event.origin!==location.origin||event.data?.source!=='NEXT_WALKING_MEEVO_BRIDGE'||event.data?.type!=='MEEVO_SNAPSHOT')return;
-  const snapshot=event.data.payload as MeevoBridgeSnapshot;
-  if(!snapshot?.visibleText)return;
-  onSnapshot(snapshot,parseBridgeBarbers(snapshot));
- };
- window.addEventListener('message',handler);
- return()=>window.removeEventListener('message',handler);
-}
+export function listenForMeevoBridge(onSnapshot:(snapshot:MeevoBridgeSnapshot,barbers:Barber[])=>void){const handler=(event:MessageEvent)=>{if(event.origin!==location.origin||event.data?.source!=='NEXT_WALKING_MEEVO_BRIDGE'||event.data?.type!=='MEEVO_SNAPSHOT')return;const snapshot=event.data.payload as MeevoBridgeSnapshot;if(snapshot?.visibleText)onSnapshot(snapshot,parseBridgeBarbers(snapshot))};window.addEventListener('message',handler);return()=>window.removeEventListener('message',handler)}
