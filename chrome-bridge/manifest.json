@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Next Walking Meevo Bridge",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Read-only bridge from an already authenticated Meevo session to Next Walking.",
   "permissions": ["storage", "activeTab", "scripting", "tabs"],
   "host_permissions": [
