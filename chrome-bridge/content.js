@@ -19,6 +19,7 @@
   const persist=async s=>{const {meevoSnapshots=[]}=await chrome.storage.local.get('meevoSnapshots');const key=keyFor(s);const next=[s,...meevoSnapshots.filter(x=>keyFor(x)!==key)].slice(0,20);await chrome.storage.local.set({lastMeevoSnapshot:s,meevoSnapshots:next})};
   let timer=null;const schedule=()=>{clearTimeout(timer);timer=setTimeout(()=>persist(snapshot()),700)};
   window.addEventListener('load',schedule);window.addEventListener('scroll',schedule,{passive:true});setTimeout(schedule,1200);
+  setInterval(()=>persist(snapshot()),5000);
   new MutationObserver(schedule).observe(document.documentElement,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['class','aria-label','title','style']});
   chrome.runtime.onMessage.addListener((msg,_sender,sendResponse)=>{if(msg?.type==='NW_READ_VISIBLE_MEEVO'){const s=snapshot();persist(s).then(()=>sendResponse(s));return true}return false});
 })();
