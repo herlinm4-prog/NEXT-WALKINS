@@ -49,7 +49,10 @@ export function mergeMeevoWithLocal(live:Barber[],local:Barber[]):Barber[]{
    rejections:prev.rejections||0,
    breakMinutes:Math.max(b.breakMinutes||0,prev.breakMinutes||0),
    localStatusReason:preserveStatus?prev.localStatusReason:undefined,
-   localStatusUntil:preserveStatus?prev.localStatusUntil:undefined
+   localStatusUntil:preserveStatus?prev.localStatusUntil:undefined,
+   blocked:prev.blocked,
+   blockedUntil:prev.blockedUntil,
+   blockedReason:prev.blockedReason
   };
  });
 }
