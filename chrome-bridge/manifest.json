@@ -1,11 +1,11 @@
 {
   "manifest_version": 3,
   "name": "Next Walking Meevo Bridge",
-  "version": "0.5.0",
-  "description": "Read-only multi-page operational bridge from an authenticated Meevo session to Next Walking.",
+  "version": "0.6.0",
+  "description": "Read-only operational bridge from an authenticated Meevo Appointment Book session to Next Walking.",
   "permissions": ["storage", "activeTab", "scripting", "tabs"],
   "host_permissions": ["https://na0.meevo.com/*","https://herlinm4-prog.github.io/NEXT-WALKINS/*"],
-  "action": {"default_popup": "popup.html", "default_title": "Next Walking Bridge"},
+  "action": {"default_popup": "popup.html", "default_title": "Next Walking Meevo Bridge 0.6.0"},
   "content_scripts": [
     {"matches": ["https://na0.meevo.com/*"], "js": ["content.js"], "run_at": "document_idle"},
     {"matches": ["https://herlinm4-prog.github.io/NEXT-WALKINS/*"], "js": ["nextwalking.js"], "run_at": "document_idle"}
